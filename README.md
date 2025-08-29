@@ -12,4 +12,4 @@ iva.py is the first one which we showed as a prototype
 
 for my use(git config --global user.name "Your Name"
 
-git config --global user.email "your.email@example.com")--> to change make this git acc to do commits instead of another one 
+git config --global user.email "your.email@example.com")--> to make this git acc to do commits instead of another one 
