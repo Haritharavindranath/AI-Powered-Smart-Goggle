@@ -11,7 +11,6 @@ class FixedSmartGoggles:
     def __init__(self):
         print("Initializing Smart Goggles...")
         
-        # Load YOLOv5 model
         try:
             print("Loading YOLOv5 model...")
             self.yolo_model = torch.hub.load('ultralytics/yolov5', 'yolov5n', 

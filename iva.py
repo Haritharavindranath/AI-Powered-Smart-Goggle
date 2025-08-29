@@ -3,7 +3,6 @@ import pyttsx3
 import torch
 from time import sleep
 
-# Load YOLOv5 model from Ultralytics
 model = torch.hub.load('ultralytics/yolov5', 'yolov5n')  # 'n' = nano version (small & fast)
 
 # Initialize text-to-speech

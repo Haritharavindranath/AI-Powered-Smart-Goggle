@@ -12,3 +12,4 @@ PyYAML>=5.4.0
 requests>=2.25.0
 scipy>=1.7.0
 tqdm>=4.60.0
+# pip install -r requirements.txt
