@@ -8,7 +8,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 class FixedSmartGoggles:
-    def _init_(self):
+    def __init__(self):
         print("Initializing Smart Goggles...")
         
         try:
@@ -474,5 +474,5 @@ def main():
         print("2. Check camera permissions")
         print("3. Install dependencies: pip install opencv-python torch ultralytics pyttsx3")
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     main()
