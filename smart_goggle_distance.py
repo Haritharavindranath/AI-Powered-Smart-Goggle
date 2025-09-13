@@ -8,7 +8,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 class FixedSmartGoggles:
-    def __init__(self):
+    def _init_(self):
         print("Initializing Smart Goggles...")
         
         try:
@@ -58,8 +58,6 @@ class FixedSmartGoggles:
         self.speak_delay = 90  # Speak every 3 seconds to give TTS time
         self.frame_count = 0
         self.confidence_threshold = 0.4
-        
-        # Removed priority objects - detect all objects equally
         
         # Simple tracking for voice
         self.last_speech_frame = 0
@@ -241,6 +239,14 @@ class FixedSmartGoggles:
         else:
             return "far right"
     
+    def is_object_straight_ahead(self, bbox, frame_width):
+        """Check if object is in the center (straight ahead) position"""
+        x1, x2 = bbox[0], bbox[2]
+        center_x = (x1 + x2) / 2
+        
+        # Consider object as "straight ahead" if it's in the center 40% of the frame
+        return frame_width * 0.3 <= center_x <= frame_width * 0.7
+    
     def speak_simple(self, text):
         """Improved TTS with better error handling and debugging"""
         if not text:
@@ -282,26 +288,32 @@ class FixedSmartGoggles:
                 print(f"Reinit also failed: {e2}")
                 return False
     
-    def create_simple_announcement(self, detections, frame):
-        """Create simple announcements for all objects"""
+    def create_red_object_announcement(self, detections, frame):
+        """Create announcements ONLY for red objects (very close) that are straight ahead"""
         if len(detections) == 0:
-            return "No objects detected"
+            return None
         
         frame_height, frame_width = frame.shape[:2]
-        announcements = []
+        red_announcements = []
         
-        # Get all detections
+        # Filter for red objects (very close, < 1m) that are straight ahead
         for _, detection in detections.iterrows():
             obj_name = detection['name']
             bbox = [detection['xmin'], detection['ymin'], detection['xmax'], detection['ymax']]
             distance_text, distance_meters = self.estimate_distance(bbox, obj_name)
-            position = self.get_position(bbox, frame_width)
             
-            # Simple announcement for each object
-            announcements.append(f"{obj_name} {distance_text} {position}")
+            # Only announce if:
+            # 1. Object is very close (red - less than 1 meter)
+            # 2. Object is straight ahead (center position)
+            if distance_meters < 1.0 and self.is_object_straight_ahead(bbox, frame_width):
+                # Create urgent warning for close obstacles straight ahead
+                red_announcements.append(f"Warning! {obj_name} obstacle straight ahead at {distance_text}")
         
-        # Limit to 3 closest objects to avoid too much speech
-        return ". ".join(announcements[:3])
+        # Return announcement only if there are red objects straight ahead
+        if red_announcements:
+            return ". ".join(red_announcements[:2])  # Limit to 2 most urgent
+        else:
+            return None
     
     def speak_threaded(self, text):
         """Simple wrapper for speak - removed threading complexity"""
@@ -332,6 +344,7 @@ class FixedSmartGoggles:
         cap.set(cv2.CAP_PROP_FPS, 30)
         
         print("Smart Goggles Active!")
+        print("*** RED OBJECT MODE: Only announces very close obstacles straight ahead ***")
         print("Controls:")
         print("- 'q' or ESC: Quit")
         print("- 's': Immediate speech (instant scan)")
@@ -355,13 +368,16 @@ class FixedSmartGoggles:
                     # Add status overlay
                     self.add_status_overlay(display_frame, detections)
                     
-                    # Speech announcements every 3 seconds
-                    if self.frame_count % self.speak_delay == 0 and len(detections) > 0:
-                        announcement = self.create_simple_announcement(detections, frame)
-                        print(f"Frame {self.frame_count}: Triggering speech")
-                        success = self.speak_simple(announcement)
-                        if not success:
-                            print("Speech failed - continuing with visual only")
+                    # Speech announcements for RED objects only (every 3 seconds)
+                    if self.frame_count % self.speak_delay == 0:
+                        announcement = self.create_red_object_announcement(detections, frame)
+                        if announcement:  # Only speak if there are red objects straight ahead
+                            print(f"Frame {self.frame_count}: RED OBJECT ALERT - {announcement}")
+                            success = self.speak_simple(announcement)
+                            if not success:
+                                print("Speech failed - continuing with visual only")
+                        else:
+                            print(f"Frame {self.frame_count}: No red objects straight ahead - silent")
                 
                 else:
                     display_frame = frame.copy()
@@ -377,13 +393,16 @@ class FixedSmartGoggles:
                     print("Quit command received")
                     break
                     
-                elif key == ord('s'):  # Manual immediate speech
-                    print("Manual speech triggered")
+                elif key == ord('s'):  # Manual immediate speech for red objects
+                    print("Manual RED object check triggered")
                     if not paused:
                         detections, _ = self.detect_objects(frame)
-                        announcement = self.create_simple_announcement(detections, frame)
-                        print("Manual announcement:", announcement)
-                        self.speak_simple(announcement)
+                        announcement = self.create_red_object_announcement(detections, frame)
+                        if announcement:
+                            print("Manual RED announcement:", announcement)
+                            self.speak_simple(announcement)
+                        else:
+                            print("No red objects straight ahead to announce")
                     
                 elif key == ord(' '):  # Pause/Resume
                     paused = not paused
@@ -409,28 +428,40 @@ class FixedSmartGoggles:
         """Add minimal status information"""
         height, width = frame.shape[:2]
         
+        # Count red objects that are straight ahead
+        red_straight_count = 0
+        for _, detection in detections.iterrows():
+            obj_name = detection['name']
+            bbox = [detection['xmin'], detection['ymin'], detection['xmax'], detection['ymax']]
+            distance_text, distance_meters = self.estimate_distance(bbox, obj_name)
+            
+            if distance_meters < 1.0 and self.is_object_straight_ahead(bbox, width):
+                red_straight_count += 1
+        
         # Simple status bar
         cv2.rectangle(frame, (0, 0), (width, 80), (0, 0, 0), -1)
         cv2.rectangle(frame, (0, 0), (width, 80), (100, 100, 100), 1)
         
-        cv2.putText(frame, f"Objects: {len(detections)} | TTS: {'OK' if self.engine else 'FAILED'}", 
+        cv2.putText(frame, f"Total Objects: {len(detections)} | RED Straight: {red_straight_count} | TTS: {'OK' if self.engine else 'FAILED'}", 
                    (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         
-        cv2.putText(frame, f"Frame: {self.frame_count} | Next speech: {self.speak_delay - (self.frame_count % self.speak_delay)}", 
+        cv2.putText(frame, f"Frame: {self.frame_count} | Next check: {self.speak_delay - (self.frame_count % self.speak_delay)}", 
                    (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
         
-        cv2.putText(frame, "Controls: q=quit, s=immediate speak, space=pause", 
-                   (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+        # Warning if red objects detected
+        if red_straight_count > 0:
+            cv2.putText(frame, f"*** WARNING: {red_straight_count} CLOSE OBSTACLES AHEAD ***", 
+                       (10, height - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
 def main():
     """Main function"""
-    print("SMART GOGGLES - AI Navigation Assistant")
+    print("SMART GOGGLES - RED OBJECT ALERT MODE")
     print("=" * 50)
     print("Features:")
     print("- Real-time object detection")
     print("- Distance estimation in meters") 
-    print("- Smart speech alerts")
-    print("- Reduced repetitive announcements")
+    print("- ONLY announces RED objects (< 1m) straight ahead")
+    print("- Urgent obstacle warnings")
     print("=" * 50)
     
     try:
@@ -443,8 +474,5 @@ def main():
         print("2. Check camera permissions")
         print("3. Install dependencies: pip install opencv-python torch ultralytics pyttsx3")
 
-if __name__ == "__main__":
+if _name_ == "_main_":
     main()
-
-
-    
